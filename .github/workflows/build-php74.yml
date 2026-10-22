@@ -52,9 +52,9 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $builderCommit -ne $env:PHP_BUILDER_COMMIT) {
               throw 'PHP build tools commit does not match.'
           }
-          $configure = Get-Content php-src/configure.ac -Raw
-          $match = [regex]::Match($configure, 'AC_INIT\(\[PHP\],\[(7\.4\.\d+(?:-[A-Za-z0-9.]+)?)\]')
-          if (-not $match.Success) { throw 'Expected an official PHP 7.4 source tree.' }
+          $versionHeader = Get-Content php-src/main/php_version.h -Raw
+          $match = [regex]::Match($versionHeader, '(?m)^#define\s+PHP_VERSION\s+"(7\.4\.\d+(?:-[A-Za-z0-9.]+)?)"')
+          if (-not $match.Success) { throw 'Expected a PHP 7.4 version header.' }
           $version = $match.Groups[1].Value
           "PHP_EXPECTED_VERSION=$version" >> $env:GITHUB_ENV
           Write-Host "Patched source: $sourceCommit"
