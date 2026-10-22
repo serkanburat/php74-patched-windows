@@ -1,0 +1,192 @@
+name: PHP 7.4 patched - Windows x64 NTS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: php74-patched-windows-x64-nts
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PHP_SOURCE_COMMIT: 712e60f9edfd03f0960fc4fc3c2c375f42b90aa2
+      PHP_BUILDER_COMMIT: 5f63433eb2bda2ca8d0d970fe487be84f7ab195c
+      SBOM: 'false'
+
+    steps:
+      - name: Get the official patched PHP source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: php/php-src
+          ref: 712e60f9edfd03f0960fc4fc3c2c375f42b90aa2
+          path: php-src
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Get the official PHP Windows build tools
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: php/php-windows-builder
+          ref: 5f63433eb2bda2ca8d0d970fe487be84f7ab195c
+          path: php-builder
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify source and builder commits
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourceCommit = (git -C php-src rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceCommit -ne $env:PHP_SOURCE_COMMIT) {
+              throw 'PHP source commit does not match the official patched source.'
+          }
+          $builderCommit = (git -C php-builder rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $builderCommit -ne $env:PHP_BUILDER_COMMIT) {
+              throw 'PHP build tools commit does not match.'
+          }
+          $configure = Get-Content php-src/configure.ac -Raw
+          $match = [regex]::Match($configure, 'AC_INIT\(\[PHP\],\[(7\.4\.\d+(?:-[A-Za-z0-9.]+)?)\]')
+          if (-not $match.Success) { throw 'Expected an official PHP 7.4 source tree.' }
+          $version = $match.Groups[1].Value
+          "PHP_EXPECTED_VERSION=$version" >> $env:GITHUB_ENV
+          Write-Host "Patched source: $sourceCommit"
+          Write-Host "Source version: $version"
+
+      - name: Compile the checked-out source for Windows x64 NTS
+        working-directory: php-src
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module "$env:GITHUB_WORKSPACE/php-builder/php/BuildPhp" -Force
+          # Omit -PhpVersion: build THIS checked-out source, not an old release tag.
+          Invoke-PhpBuild -Arch x64 -Ts nts
+
+      - name: Test the built package and bundled extensions
+        working-directory: php-src
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module "$env:GITHUB_WORKSPACE/php-builder/php/BuildPhp" -Force
+          Invoke-PhpSmokeTests -ArtifactsDirectory "$PWD/artifacts" -Arch x64 -Ts nts
+
+      - name: Verify Windows x64 NTS and prepare the download
+        working-directory: php-src
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packages = @(Get-ChildItem artifacts -File -Filter '*.zip' | Where-Object {
+              $_.Name -match '^php-7\.4\..*-nts-Win32-vc15-x64\.zip$'
+          })
+          if ($packages.Count -ne 1) {
+              throw "Expected one PHP 7.4 x64 NTS runtime package; found $($packages.Count)."
+          }
+
+          $runtimeDirectory = Join-Path $env:RUNNER_TEMP 'php74-runtime-check'
+          Expand-Archive -LiteralPath $packages[0].FullName -DestinationPath $runtimeDirectory
+          $phpExe = Join-Path $runtimeDirectory 'php.exe'
+          $cgiExe = Join-Path $runtimeDirectory 'php-cgi.exe'
+          if (-not (Test-Path -LiteralPath $cgiExe)) { throw 'php-cgi.exe is missing.' }
+
+          $checkFile = Join-Path $env:RUNNER_TEMP 'php74-runtime-info.php'
+          @'
+          <?php
+          echo json_encode(array(
+              'version' => PHP_VERSION,
+              'os' => PHP_OS_FAMILY,
+              'bits' => PHP_INT_SIZE * 8,
+              'zts' => PHP_ZTS,
+              'debug' => PHP_DEBUG,
+              'sapi' => PHP_SAPI
+          ));
+          '@ | Set-Content -LiteralPath $checkFile -Encoding ascii
+
+          $runtimeOutput = & $phpExe -n $checkFile
+          if ($LASTEXITCODE -ne 0) { throw 'The built PHP executable failed.' }
+          $runtime = ($runtimeOutput -join "`n") | ConvertFrom-Json
+          if ($runtime.version -ne $env:PHP_EXPECTED_VERSION -or
+              $runtime.os -ne 'Windows' -or $runtime.bits -ne 64 -or
+              $runtime.zts -ne 0 -or $runtime.debug -ne 0) {
+              throw "Unexpected runtime: $($runtime | ConvertTo-Json -Compress)"
+          }
+          $cgiVersion = (& $cgiExe -n -v) -join "`n"
+          if ($LASTEXITCODE -ne 0 -or $cgiVersion -notmatch '\(cgi-fcgi\)') {
+              throw 'The built CGI/FastCGI executable failed.'
+          }
+          Write-Host ($runtime | ConvertTo-Json)
+          Write-Host $cgiVersion
+
+          $dist = New-Item -ItemType Directory -Path dist
+          $env:TEST_PHP_EXECUTABLE = $phpExe
+          $env:TEST_PHP_CGI_EXECUTABLE = $cgiExe
+          $env:NO_INTERACTION = '1'
+          $env:REPORT_EXIT_STATUS = '1'
+          $env:TEST_PHP_JUNIT = Join-Path $dist.FullName 'upstream-tests.xml'
+          $tests = @(
+              'tests/basic/rfc1867_array_upload.phpt',
+              'tests/basic/rfc1867_boundary_1.phpt',
+              'tests/basic/rfc1867_post_max_size.phpt',
+              'tests/basic/rfc1867_max_file_uploads_empty_files.phpt',
+              'ext/session/tests/session_basic1.phpt',
+              'ext/session/tests/session_encode_basic.phpt',
+              'ext/session/tests/session_write_close_basic.phpt'
+          )
+          & $phpExe -n run-tests.php -n -q -p $phpExe `
+              -d "session.save_path=$env:RUNNER_TEMP" `
+              -d "upload_tmp_dir=$env:RUNNER_TEMP" @tests
+          if ($LASTEXITCODE -ne 0) { throw 'Upstream upload/session regression tests failed.' }
+          [xml]$testReport = Get-Content -LiteralPath $env:TEST_PHP_JUNIT -Raw
+          if ($testReport.SelectNodes('//testcase').Count -ne $tests.Count -or
+              $testReport.SelectNodes('//testcase/skipped').Count -ne 0) {
+              throw 'Some required upload/session tests were skipped or were not executed.'
+          }
+
+          $shortCommit = $env:PHP_SOURCE_COMMIT.Substring(0, 12)
+          $packageName = "php74-patched-windows-x64-nts-$shortCommit.zip"
+          $packagePath = Join-Path $dist.FullName $packageName
+          Copy-Item -LiteralPath $packages[0].FullName -Destination $packagePath
+          $hash = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $packageName" | Set-Content -LiteralPath (Join-Path $dist.FullName 'SHA256SUMS.txt') -Encoding ascii
+
+          [ordered]@{
+              source_repository = 'https://github.com/php/php-src'
+              source_branch = 'PHP-7.4-CVE-2026-109618-109619'
+              source_commit = $env:PHP_SOURCE_COMMIT
+              builder_repository = 'https://github.com/php/php-windows-builder'
+              builder_commit = $env:PHP_BUILDER_COMMIT
+              advisories = @('CVE-2026-109618', 'CVE-2026-109619')
+              runtime = $runtime
+              runner_image = $env:ImageVersion
+              built_at_utc = [DateTime]::UtcNow.ToString('o')
+              workflow_run = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+              package = $packageName
+              sha256 = $hash
+              bundled_extension_smoke_tests = 'passed'
+              upstream_upload_session_tests = '7 passed; see upstream-tests.xml'
+              iis_application_tests = 'not yet performed'
+              sqlsrv_drivers = 'not included; supply compatible PHP 7.4 x64 NTS drivers'
+              scope = 'Custom build of the official two-CVE backport; PHP 7.4 remains end-of-life.'
+          } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $dist.FullName 'BUILD-PROVENANCE.json') -Encoding utf8
+
+          @"
+          ## PHP 7.4 Windows x64 NTS build
+          * Runtime: $($runtime.version)
+          * Official patched source: $env:PHP_SOURCE_COMMIT
+          * Package: $packageName
+          * SHA-256: $hash
+          * CLI, CGI and bundled extension smoke checks passed.
+          * Seven upstream upload/session regression tests passed.
+          * IIS application and SQL Server driver checks are still required.
+          "@ >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload the verified build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: php74-patched-windows-x64-nts
+          path: php-src/dist/*
+          if-no-files-found: error
+          retention-days: 7
