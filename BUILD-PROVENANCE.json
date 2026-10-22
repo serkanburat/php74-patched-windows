@@ -1,0 +1,37 @@
+{
+  "source_repository": "https://github.com/php/php-src",
+  "source_branch": "PHP-7.4-CVE-2026-109618-109619",
+  "source_commit": "712e60f9edfd03f0960fc4fc3c2c375f42b90aa2",
+  "builder_repository": "https://github.com/php/php-windows-builder",
+  "builder_commit": "5f63433eb2bda2ca8d0d970fe487be84f7ab195c",
+  "advisories": [
+    "CVE-2026-109618",
+    "CVE-2026-109619"
+  ],
+  "runtime": {
+    "version": "7.4.31-dev",
+    "os": "Windows",
+    "bits": 64,
+    "zts": 0,
+    "debug": 0,
+    "sapi": "cli"
+  },
+  "runner_image": "20261012.333.1",
+  "built_at_utc": "2026-10-22T13:33:57.2565172Z",
+  "workflow_run": "https://github.com/serkanburat/php74-patched-windows/actions/runs/39783222676",
+  "package": "php74-patched-windows-x64-nts-712e60f9edfd.zip",
+  "sha256": "cd3627ce0e42cbfb76ba14030c4ea3e02d279fb3173bec99222196ee8edbe176",
+  "bundled_extension_smoke_tests": "passed",
+  "upstream_upload_session_tests": "7 passed; see upstream-tests.xml",
+  "iis_application_tests": "not yet performed",
+  "scope": "Custom build of the official two-CVE backport; PHP 7.4 remains end-of-life.",
+  "publication": {
+    "release_tag": "v2026.10.22-1",
+    "package_modifications": "none; runtime ZIP is byte-for-byte identical to the successful build output",
+    "maintainer_functional_checks": [
+      "IIS/FastCGI startup",
+      "Application login on Windows Server 2019"
+    ],
+    "validation_scope": "Functional checks and upstream regression tests; no exhaustive exploit validation"
+  }
+}

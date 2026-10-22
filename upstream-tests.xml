@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="PHP" tests="7" failures="0" errors="0" skip="0" time="0.3006">
+<testsuite name="PHP.ext.session.tests" tests="3" failures="0" errors="0" skip="0" time="0.1815">
+<testcase name='D:\a\php74-patched-windows\php74-patched-windows\php-src\ext\session\tests\session_basic1.phpt (Test basic function : variation1)' time='0.0605'>
+</testcase>
+<testcase name='D:\a\php74-patched-windows\php74-patched-windows\php-src\ext\session\tests\session_encode_basic.phpt (Test session_encode() function : basic functionality)' time='0.0604'>
+</testcase>
+<testcase name='D:\a\php74-patched-windows\php74-patched-windows\php-src\ext\session\tests\session_write_close_basic.phpt (Test session_write_close() function : basic functionality)' time='0.0606'>
+</testcase>
+</testsuite>
+<testsuite name="PHP.tests.basic" tests="4" failures="0" errors="0" skip="0" time="0.1191">
+<testcase name='D:\a\php74-patched-windows\php74-patched-windows\php-src\tests\basic\rfc1867_array_upload.phpt (rfc1867 array upload)' time='0.0299'>
+</testcase>
+<testcase name='D:\a\php74-patched-windows\php74-patched-windows\php-src\tests\basic\rfc1867_boundary_1.phpt (rfc1867 boundary 1)' time='0.0296'>
+</testcase>
+<testcase name='D:\a\php74-patched-windows\php74-patched-windows\php-src\tests\basic\rfc1867_max_file_uploads_empty_files.phpt (rfc1867 max_file_uploads - empty files shouldn&#039;t count)' time='0.0298'>
+</testcase>
+<testcase name='D:\a\php74-patched-windows\php74-patched-windows\php-src\tests\basic\rfc1867_post_max_size.phpt (rfc1867 post_max_size)' time='0.0298'>
+</testcase>
+</testsuite>
+</testsuites>
